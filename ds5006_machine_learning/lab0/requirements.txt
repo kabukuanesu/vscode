@@ -1,0 +1,4 @@
+# DS5006 Fall 2026 -- lab environment.
+# VS Code offers to install these when you run "Python: Create Environment".
+numpy>=2.0
+matplotlib>=3.8

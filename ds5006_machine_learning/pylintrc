@@ -1,0 +1,45 @@
+# DS5006 Lab 2 -- code quality configuration.
+#
+# Ten of the hundred marks come from this file. Run it yourself:
+#
+#     python -m pylint ds5006_lab2.py --rcfile=pylintrc
+#
+# The marks are the pylint score out of 10, rounded to one decimal.
+# The untouched stub already scores 10.00, so you start at full marks and
+# lose them only by writing code that is hard to read.
+
+[MAIN]
+jobs = 1
+persistent = no
+
+[MESSAGES CONTROL]
+# Disabled because they fight the mathematical style this lab requires.
+disable =
+    invalid-name,
+    too-many-locals,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-statements,
+    too-many-branches,
+    too-many-return-statements,
+    duplicate-code,
+    import-error,
+    fixme
+
+[FORMAT]
+max-line-length = 100
+indent-string = '    '
+
+[BASIC]
+good-names = i, j, k, n, p, K, X, Y, y, w, b, H, g, e, _
+docstring-min-length = 1
+no-docstring-rgx = ^_
+
+[DESIGN]
+max-nested-blocks = 4
+
+[REFACTORING]
+max-nested-blocks = 4
+
+[VARIABLES]
+dummy-variables-rgx = ^_.*$

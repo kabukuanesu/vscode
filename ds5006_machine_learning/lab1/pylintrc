@@ -1,0 +1,114 @@
+# =============================================================================
+# DS5006 Lab 1 -- lint configuration
+#
+# This is the exact configuration the grader uses. Run it yourself with:
+#
+#     pylint ds5006_lab1.py
+#
+# Keep this file next to ds5006_lab1.py and pylint finds it by itself. The
+# filename has no leading dot, which is deliberate: dot-files are hidden by
+# default on Windows and are awkward to save from a browser.
+#
+# Part 0 awards: >=9.0 -> 4 marks, >=8.0 -> 3, >=7.0 -> 2, >=5.0 -> 1.
+#
+# The philosophy: lenient about mathematical notation, strict about everything
+# that makes code hard for another person to read or trust. Short names like
+# `w`, `b`, `lam`, `s` are how linear algebra is written and are allowed.
+# Unused variables, dead code, shadowed builtins and inconsistent returns are
+# not, because each of them hides a real bug at least some of the time.
+#
+# Fix warnings; do not silence them. A file peppered with `# pylint: disable=`
+# comments scores 10/10 and will be marked down by hand.
+# =============================================================================
+
+[MAIN]
+# Written for pylint 3.x and 4.x. If your version is older than 3.3 it will not
+# recognise every name below; the first two entries stop that from costing you
+# marks, so leave them in place.
+disable=
+    unknown-option-value,
+    bad-option-value,
+
+# --- Sizing rules relaxed for numerical code ------------------------------
+# A vectorised routine legitimately holds many intermediate arrays, and the
+# fitting functions in this lab genuinely resemble one another.
+    too-many-locals,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-statements,
+    duplicate-code,
+    too-few-public-methods,
+
+# --- Environment noise, not code quality ----------------------------------
+# The grader relocates your module, so import resolution is not your problem.
+    import-error,
+    wrong-import-position,
+
+# --- Style preferences this course does not legislate ----------------------
+    fixme,
+    consider-using-f-string,
+    no-else-return
+
+# Keep the score line; the grader parses it.
+score=yes
+
+[BASIC]
+# Single letters and standard abbreviations used in linear algebra. Anything
+# not listed here still has to be snake_case and meaningful.
+good-names=
+    i, j, k, m, n, p, q, t,
+    a, b, c, d, e, f, g, h, r, s, u, v, w, x, y, z,
+    A, B, D, H, I, J, L, M, P, Q, R, S, U, V, W, X, Y, Z,
+    lam, mu, sd, se, df, dof, eps, tol, rng, lr, mse, rss, tss,
+    xs, ys, xc, yc, ub, lb, hh, _
+
+# Any one- or two-letter name, optionally with a trailing digit, is accepted.
+# This is what makes `Vt`, `Xc`, `w0`, `s2`, `U`, `h` legal without having to
+# enumerate every combination a linear-algebra routine might use.
+good-names-rgxs=^[A-Za-z][A-Za-z]?[0-9]?_?$
+
+# Names that look fine but almost always signal an unfinished thought.
+bad-names=foo, bar, baz, temp, tmp, data1, data2, test, asdf, aaa, xxx, todo
+
+argument-naming-style=snake_case
+variable-naming-style=snake_case
+function-naming-style=snake_case
+const-naming-style=UPPER_CASE
+
+# Every function you implement needs a docstring. Part 0 grades this
+# separately too, so it is worth getting right once.
+no-docstring-rgx=^_
+docstring-min-length=-1
+
+[TYPECHECK]
+# pylint cannot introspect NumPy's compiled members, so it reports false
+# positives such as `np.finfo(float).eps has no member 'eps'`. These two lines
+# stop that from costing you marks. They do not weaken any other check.
+generated-members=numpy.*, np.*
+ignored-classes=numpy, ndarray, finfo, generic
+
+[FORMAT]
+max-line-length=100
+indent-string='    '
+indent-after-paren=4
+
+[DESIGN]
+max-branches=20
+max-nested-blocks=6
+max-returns=8
+max-bool-expr=6
+
+[VARIABLES]
+# Loop variables you deliberately ignore: name them `_` or start with an
+# underscore, and pylint will stop complaining.
+dummy-variables-rgx=^_+$|^_[a-z0-9_]*$|^unused_
+init-import=no
+
+[SIMILARITIES]
+ignore-comments=yes
+ignore-docstrings=yes
+ignore-imports=yes
+
+[REPORTS]
+output-format=colorized
+reports=no

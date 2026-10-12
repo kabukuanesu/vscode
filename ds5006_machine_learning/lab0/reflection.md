@@ -1,0 +1,9 @@
+## Assignment Reflection
+
+This assignment was both challenging and educational. Although I have approximately three years of programming experience and have previously completed a machine learning course, I found many of the questions difficult because they required a deeper understanding of linear algebra concepts such as Singular Value Decomposition (SVD), eigendecomposition, and the pseudoinverse, which I had not encountered before. These topics were new to me, and I had to spend considerable time learning the underlying theory before attempting the programming tasks.
+
+I am reasonably confident in Python programming, but I realized that my NumPy skills are still developing. While I was able to understand the basic syntax and implement some solutions, I often struggled to translate the mathematical concepts into working code. This assignment highlighted the importance of having a strong foundation in both mathematics and numerical computing when working with machine learning algorithms.
+
+To complete the assignment, I spent approximately five hours working through the questions and relied on online resources and YouTube videos to better understand the concepts and programming techniques. These resources were very helpful in explaining ideas that I initially found confusing and allowed me to make steady progress. However, I made sure to understand the explanations and implement the solutions myself rather than simply copying code.
+
+This assignment has helped me identify areas where I need further improvement, particularly in linear algebra and the use of NumPy for mathematical computations. Although I found many of the questions difficult, I believe the experience has strengthened my problem-solving skills and motivated me to continue studying these topics in greater depth. I am now more aware of the knowledge and practice required to confidently tackle similar machine learning and data science problems in the future.
