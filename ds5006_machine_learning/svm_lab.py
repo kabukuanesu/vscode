@@ -2,8 +2,8 @@
 DS5006 Fall 2026 -- Lab 4: Support Vector Machines
 ================================================================
 
-YOUR NAME :
-YOUR ROLL :
+YOUR NAME : Anesu Kabuku
+YOUR ROLL : 142602026
 
 Fill in the seven functions in Part A, then the three experiments in
 Part C, then run this file to write results.json.
@@ -55,7 +55,7 @@ from svmlab_provided import (
     C_GRID, S2_GRID, TOL, S2_DEFAULT, C_DEFAULT,
 )
 
-ROLL_NUMBER = "REPLACE_WITH_YOUR_ROLL_NUMBER"
+ROLL_NUMBER = 142602026
 
 
 # ======================================================================
@@ -67,7 +67,7 @@ def linear_kernel(A, B):
 
     A is (n_A, d), B is (n_B, d); return shape (n_A, n_B).
     """
-    raise NotImplementedError
+    return np.asarray(A) @ np.asarray(B).T
 
 
 def rbf_kernel(A, B, s2):
@@ -80,7 +80,19 @@ def rbf_kernel(A, B, s2):
 
     Return shape (n_A, n_B).
     """
-    raise NotImplementedError
+    A = np.asarray(A, dtype= float)
+    B = np.asarray(B, dtype= float)
+
+    if s2 <= 0:
+        raise ValueError("s2 must be positive")
+
+    A2 = np.sum(A * A, axis=1)[:, None]
+    B2 = np.sum(B * B, axis=1)[None, :]
+
+    D2 = A2 + B2 - 2.0 * (A @ B.T)
+    D2 = np.maximum(D2, 0.0)
+
+    return np.exp(-D2 / (2 * s2))
 
 
 def classify_regimes(alpha, C, tol):
@@ -89,7 +101,13 @@ def classify_regimes(alpha, C, tol):
     See conventions 3 and 4 above, and Proposition 6.1 of the notes.
     Return a (n,) array of int.
     """
-    raise NotImplementedError
+    alpha = np.asarray(alpha, dtype=float)
+
+    code = np.zeros(alpha.shape, dtype=int)
+    code[(alpha > tol) & (alpha < C - tol)] = 1
+    code[alpha >= C - tol] = 2
+
+    return code
 
 
 def recover_intercept(alpha, y, K, C, tol):
@@ -114,7 +132,37 @@ def recover_intercept(alpha, y, K, C, tol):
 
     Return a float.
     """
-    raise NotImplementedError
+    alpha = np.asarray(alpha, dtype=float)
+    y = np.asarray(y, dtype=float)
+    K = np.asarray(K, dtype=float)
+
+    f = K @ (alpha * y)
+
+    free = (alpha > tol) & (alpha < C - tol)
+
+    if np.any(free):
+        return float(np.mean(y[free] - f[free]))
+
+    below_C = alpha < C - tol
+    above_zero = alpha > tol
+
+    lower_mask = ((y > 0) & below_C) | ((y < 0) & above_zero)
+    upper_mask = ((y > 0) & above_zero) | ((y < 0) & below_C)
+
+    lower_values = y[lower_mask] - f[lower_mask]
+    upper_values = y[upper_mask] - f[upper_mask]
+
+    L = float(np.max(lower_values)) if lower_values.size else -np.inf
+    U = float(np.min(upper_values)) if upper_values.size else np.inf
+
+    if np.isfinite(L) and np.isfinite(U):
+        return float((L + U) / 2.0)
+    if np.isfinite(L):
+        return L
+    if np.isfinite(U):
+        return U
+
+    raise ValueError("Cannot determine an intercept interval")
 
 
 def decision_values(alpha, theta0, y, K_test):
@@ -122,7 +170,11 @@ def decision_values(alpha, theta0, y, K_test):
 
     K_test is (n_test, n_train); return shape (n_test,).
     """
-    raise NotImplementedError
+    alpha = np.asarray(alpha, dtype=float)
+    y = np.asarray(y, dtype=float)
+    K_test = np.asarray(K_test, dtype=float)
+
+    return K_test @ (alpha * y) + theta0
 
 
 def margin_width(alpha, y, K):
@@ -135,7 +187,17 @@ def margin_width(alpha, y, K):
 
     Return float('inf') if ||theta||^2 is non-positive.
     """
-    raise NotImplementedError
+    alpha = np.asarray(alpha, dtype=float)
+    y = np.asarray(y, dtype=float)
+    K = np.asarray(K, dtype=float)
+
+    ay = alpha * y
+    norm_squared = float(ay @ K @ ay)
+
+    if norm_squared <= 0.0:
+        return float('inf')
+
+    return float(2.0 / np.sqrt(norm_squared))
 
 
 def kkt_residual(alpha, theta0, y, K, C, tol):
@@ -148,7 +210,19 @@ def kkt_residual(alpha, theta0, y, K, C, tol):
 
     Return 0.0 if there are no free support vectors.
     """
-    raise NotImplementedError
+    alpha = np.asarray(alpha, dtype=float)
+    y = np.asarray(y, dtype=float)
+    K = np.asarray(K, dtype=float)
+
+    free = (alpha > tol) & (alpha < C - tol)
+
+    if not np.any(free):
+        return 0.0
+
+    f = K @ (alpha * y)
+    margins =  y[free] * (f[free] + theta0)
+
+    return float(np.max(np.abs(margins - 1.0)))
 
 
 # ======================================================================
