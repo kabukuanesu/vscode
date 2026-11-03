@@ -55,7 +55,7 @@ from svmlab_provided import (
     C_GRID, S2_GRID, TOL, S2_DEFAULT, C_DEFAULT,
 )
 
-ROLL_NUMBER = 142602026
+ROLL_NUMBER = "142602026"
 
 
 # ======================================================================
@@ -248,6 +248,7 @@ def fit(X_train, y_train, C, s2=None, tol=TOL):
 
 
 def error_rate(model, X_train, y_train, X_eval, y_eval, s2=None):
+    """Error Rate"""
     Kt = linear_kernel(X_eval, X_train) if s2 is None \
         else rbf_kernel(X_eval, X_train, s2)
     g = decision_values(model["alpha"], model["theta0"], y_train, Kt)
@@ -289,7 +290,106 @@ def experiment_1(X_tr, y_tr, X_te, y_te):
     kkt_residual_free, kkt_residual_all_sv, refit_n_before,
     refit_n_after, refit_max_g_diff, refit_label_agreement.
     """
-    raise NotImplementedError
+    # 1. Fit once at C = C_DEFAULT, s2 = S2_DEFAULT
+    model = fit(X_tr, y_tr, C=C_DEFAULT, s2=S2_DEFAULT)
+    alpha = model["alpha"]
+    theta0 = model["theta0"]
+    K_train = model["K"]
+    regimes = model["regimes"]
+
+    # --- (a) The three regimes ---
+    g = decision_values(alpha, theta0, y_tr, K_train)
+    margins = y_tr * g
+    
+    nonsv_m = margins[regimes == 0]
+    free_m = margins[regimes == 1]
+    bounded_m = margins[regimes == 2]
+    
+    regime_counts = {
+        "non_sv": int(np.sum(regimes == 0)),
+        "free": int(np.sum(regimes == 1)),
+        "bounded": int(np.sum(regimes == 2))
+    }
+    
+    free_margin_min = float(np.min(free_m)) if len(free_m) > 0 else None
+    free_margin_max = float(np.max(free_m)) if len(free_m) > 0 else None
+    bounded_margin_max = float(np.max(bounded_m)) if len(bounded_m) > 0 else None
+    nonsv_margin_min = float(np.min(nonsv_m)) if len(nonsv_m) > 0 else None
+    
+    slack = 1e-6
+    violations = {
+        "non_sv": int(np.sum(nonsv_m < 1.0 - slack)),
+        "free": int(np.sum(np.abs(free_m - 1.0) > slack)),
+        "bounded": int(np.sum(bounded_m > 1.0 + slack))
+    }
+    
+    # --- (b) Explicit weight vector (linear kernel) ---
+    model_lin = fit(X_tr, y_tr, C=C_DEFAULT, s2=None)
+    alpha_lin = model_lin["alpha"]
+    theta0_lin = model_lin["theta0"]
+    K_train_lin = model_lin["K"]
+    
+    theta = X_tr.T @ (alpha_lin * y_tr)
+    theta_norm = np.linalg.norm(theta)
+    explicit_width = 2.0 / theta_norm if theta_norm > 0 else float("inf")
+    
+    kernel_width = margin_width(alpha_lin, y_tr, K_train_lin)
+    theta_width_diff = float(abs(explicit_width - kernel_width))
+    
+    g_explicit = X_tr @ theta + theta0_lin
+    g_kernel_lin = decision_values(alpha_lin, theta0_lin, y_tr, K_train_lin)
+    theta_g_diff = float(np.max(np.abs(g_explicit - g_kernel_lin)))
+    
+    # --- (c) A wrong intercept that looks right ---
+    f = K_train @ (alpha * y_tr)
+    support_vectors = alpha > TOL
+    free_vectors = (alpha > TOL) & (alpha < C_DEFAULT - TOL)
+    
+    theta0_free = float(np.mean(y_tr[free_vectors] - f[free_vectors]))
+    theta0_all_sv = float(np.mean(y_tr[support_vectors] - f[support_vectors]))
+    theta0_abs_diff = float(abs(theta0_free - theta0_all_sv))
+    
+    kkt_residual_free = kkt_residual(alpha, theta0_free, y_tr, K_train, C_DEFAULT, TOL)
+    kkt_residual_all_sv = kkt_residual(alpha, theta0_all_sv, y_tr, K_train, C_DEFAULT, TOL)
+    
+    # --- (d) Most of your data is doing nothing ---
+    sv_mask = regimes > 0
+    X_reduced = X_tr[sv_mask]
+    y_reduced = y_tr[sv_mask]
+    
+    refit_n_before = int(X_tr.shape[0])
+    refit_n_after = int(X_reduced.shape[0])
+    
+    model_reduced = fit(X_reduced, y_reduced, C=C_DEFAULT, s2=S2_DEFAULT)
+    
+    K_test_full = rbf_kernel(X_te, X_tr, S2_DEFAULT)
+    K_test_red = rbf_kernel(X_te, X_reduced, S2_DEFAULT)
+    
+    g_full = decision_values(alpha, theta0, y_tr, K_test_full)
+    g_red = decision_values(model_reduced["alpha"], model_reduced["theta0"], y_reduced, K_test_red)
+    
+    refit_max_g_diff = float(np.max(np.abs(g_full - g_red)))
+    refit_label_agreement = float(np.mean(np.sign(g_full) == np.sign(g_red)))
+    
+    return {
+        "regime_counts": regime_counts,
+        "free_margin_min": free_margin_min,
+        "free_margin_max": free_margin_max,
+        "bounded_margin_max": bounded_margin_max,
+        "nonsv_margin_min": nonsv_margin_min,
+        "violations": violations,
+        "theta_width_diff": theta_width_diff,
+        "theta_g_diff": theta_g_diff,
+        "theta0_free": theta0_free,
+        "theta0_all_sv": theta0_all_sv,
+        "theta0_abs_diff": theta0_abs_diff,
+        "kkt_residual_free": kkt_residual_free,
+        "kkt_residual_all_sv": kkt_residual_all_sv,
+        "refit_n_before": refit_n_before,
+        "refit_n_after": refit_n_after,
+        "refit_max_g_diff": refit_max_g_diff,
+        "refit_label_agreement": refit_label_agreement,
+    }
 
 
 def experiment_2(X_tr, y_tr, X_te, y_te):
@@ -305,7 +405,45 @@ def experiment_2(X_tr, y_tr, X_te, y_te):
     width_ratio is the first margin width divided by the last.
     test_error_improvement is the first test error minus the smallest.
     """
-    raise NotImplementedError
+    margin_widths = []
+    sv_fractions = []
+    n_frees = []
+    n_boundeds = []
+    train_errors = []
+    test_errors = []
+
+    for C in C_GRID:
+        model = fit(X_tr, y_tr, C=C, s2=S2_DEFAULT)
+        
+        margin_widths.append(model["margin_width"])
+        sv_fractions.append(model["n_sv"] / len(y_tr))
+        n_frees.append(model["n_free"])
+        n_boundeds.append(model["n_bounded"])
+        
+        train_errors.append(error_rate(model, X_tr, y_tr, X_tr, y_tr, s2=S2_DEFAULT))
+        test_errors.append(error_rate(model, X_tr, y_tr, X_te, y_te, s2=S2_DEFAULT))
+
+    # Convert to numpy arrays for easy math
+    margin_widths = np.array(margin_widths)
+    test_errors = np.array(test_errors)
+    
+    # width_ratio = first margin width divided by last margin width
+    width_ratio = float(margin_widths[0] / margin_widths[-1])
+    
+    # test_error_improvement = first test error minus the smallest test error
+    test_error_improvement = float(test_errors[0] - np.min(test_errors))
+
+    return {
+        "C_grid": C_GRID,
+        "margin_width": margin_widths,
+        "sv_fraction": np.array(sv_fractions),
+        "n_free": np.array(n_frees),
+        "n_bounded": np.array(n_boundeds),
+        "train_error": np.array(train_errors),
+        "test_error": test_errors,
+        "width_ratio": width_ratio,
+        "test_error_improvement": test_error_improvement,
+    }
 
 
 def experiment_3(X_tr, y_tr, X_te, y_te):
@@ -327,7 +465,78 @@ def experiment_3(X_tr, y_tr, X_te, y_te):
     best_s2 is the s2 with the smallest test error; the two rises are
     the first and last test errors minus that smallest one.
     """
-    raise NotImplementedError
+    n_sv_list = []
+    n_free_list = []
+    train_err_list = []
+    test_err_list = []
+    cond_K_list = []
+    top_eig_frac_list = []
+
+    for s2 in S2_GRID:
+        model = fit(X_tr, y_tr, C=C_DEFAULT, s2=s2)
+        K_train = model["K"]
+
+        n_sv_list.append(model["n_sv"])
+        n_free_list.append(model["n_free"])
+
+        train_err_list.append(
+            error_rate(model, X_tr, y_tr, X_tr, y_tr, s2=s2)
+        )
+        test_err_list.append(
+            error_rate(model, X_tr, y_tr, X_te, y_te, s2=s2)
+        )
+
+        # Spectral properties of the training Gram matrix
+        eigvals = np.linalg.eigvalsh(K_train)
+        
+        # Clip tiny negative eigenvalues to zero
+        eigvals = np.clip(eigvals, 0.0, None)
+        
+        max_eig = float(np.max(eigvals))
+        min_eig = float(np.min(eigvals))
+        
+        # Condition number
+        if min_eig > 0:
+            cond_K_list.append(float(max_eig / min_eig))
+        else:
+            cond_K_list.append(float("inf"))
+            
+        # Top eigenvalue fraction
+        sum_eig = float(np.sum(eigvals))
+        if sum_eig > 0:
+            top_eig_frac_list.append(float(max_eig / sum_eig))
+        else:
+            top_eig_frac_list.append(0.0)
+
+    n_sv_arr = np.array(n_sv_list)
+    n_free_arr = np.array(n_free_list)
+    train_err_arr = np.array(train_err_list)
+    test_err_arr = np.array(test_err_list)
+    cond_K_arr = np.array(cond_K_list)
+    top_eig_frac_arr = np.array(top_eig_frac_list)
+
+    # Find best s2 and the rises
+    best_idx = int(np.argmin(test_err_arr))
+    best_s2 = float(S2_GRID[best_idx])
+    min_test_err = test_err_arr[best_idx]
+
+    # The instructions say: "the two rises are the first and last test errors 
+    # minus that smallest one."
+    test_error_left_rise = float(test_err_arr[0] - min_test_err)
+    test_error_right_rise = float(test_err_arr[-1] - min_test_err)
+
+    return {
+        "s2_grid": S2_GRID,
+        "n_sv": n_sv_arr,
+        "n_free": n_free_arr,
+        "train_error": train_err_arr,
+        "test_error": test_err_arr,
+        "cond_K": cond_K_arr,
+        "top_eig_fraction": top_eig_frac_arr,
+        "best_s2": best_s2,
+        "test_error_left_rise": test_error_left_rise,
+        "test_error_right_rise": test_error_right_rise,
+    }
 
 
 # ======================================================================
