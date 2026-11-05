@@ -1,0 +1,20 @@
+movielens-api/
+├── alembic/                  # Database migration scripts
+├── src/
+│   ├── auth/                 # Authentication domain
+│   │   ├── router.py         # /auth routes
+│   │   ├── schemas.py        # Login/registration request and response models
+│   │   ├── models.py         # SQLAlchemy user table
+│   │   ├── service.py        # User creation, password verification
+│   │   └── dependencies.py   # get_current_user, role validation
+│   ├── movies/               # Movie domain (example business module)
+│   │   ├── router.py
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   └── service.py
+│   ├── config.py             # Pydantic BaseSettings, read .env
+│   ├── database.py           # Async engine + AsyncSession dependency
+│   └── main.py               # FastAPI() + include_router
+├── .env
+├── requirements.txt
+└── alembic.ini
