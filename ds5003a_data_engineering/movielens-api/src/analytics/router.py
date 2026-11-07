@@ -29,16 +29,16 @@ async def get_top_tags_for_movie(movie_id: int, db: AsyncSession = Depends(get_d
     return [{"tag": row.tag, "relevance_score": row.relevance_score} for row in result]
 
 # (b) Show overall and year-wise top 10 movies based on the average rating.
+# In src/analytics/router.py
+
 @router.get("/movies/top-rated")
 async def get_top_rated_movies(
     year: int = Query(None, description="Filter by specific year (optional)"),
+    start_year: int = Query(None, description="Filter by start year (optional)"),
+    end_year: int = Query(None, description="Filter by end year (optional)"),
     limit: int = 10,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Returns top 10 movies overall (if year is null) or for a specific year.
-    Requires a minimum number of ratings to avoid 1-rating anomalies.
-    """
     stmt = (
         select(
             movie_models.Movie.movie_id,
@@ -54,6 +54,8 @@ async def get_top_rated_movies(
     
     if year:
         stmt = stmt.where(movie_models.Movie.year == year)
+    elif start_year and end_year:
+        stmt = stmt.where(movie_models.Movie.year >= start_year, movie_models.Movie.year <= end_year)
         
     stmt = stmt.order_by(desc("avg_rating"), desc("num_ratings")).limit(limit)
     
@@ -61,34 +63,35 @@ async def get_top_rated_movies(
     return result.mappings().all()
 
 # (c) What are the most popular tags given for each genre.
+# In src/analytics/router.py
+
 @router.get("/genres/top-tags")
 async def get_top_tags_per_genre(db: AsyncSession = Depends(get_db)):
-    """
-    Finds the most popular tags for each genre.
-    Uses a window function to rank tags within each genre.
-    """
-    # 1. Count tag frequency per genre
-    subq = (
+    # 1. Group and count tags per genre
+    stmt = (
         select(
             movie_models.Genre.name.label("genre"),
             movie_models.Tag.tag.label("tag"),
-            func.count(movie_models.Tag.user_id).label("tag_count")
+            func.count(movie_models.Tag.user_id).label("tag_count"),
+            func.row_number().over(
+                partition_by=movie_models.Genre.name,
+                order_by=desc(func.count(movie_models.Tag.user_id))
+            ).label("rank")
         )
         .join(movie_models.MovieGenre, movie_models.Genre.genre_id == movie_models.MovieGenre.genre_id)
         .join(movie_models.Tag, movie_models.MovieGenre.movie_id == movie_models.Tag.movie_id)
         .group_by(movie_models.Genre.name, movie_models.Tag.tag)
         .subquery()
     )
-    
-    # 2. Rank them and pick top 3 for each genre
-    stmt = (
-        select(subq.c.genre, subq.c.tag, subq.c.tag_count)
-        .distinct(subq.c.genre)
-        .order_by(subq.c.genre, desc(subq.c.tag_count))
+
+    # 2. Select only the top 1 tag per genre (change to <=3 if you want top 3)
+    final_stmt = (
+        select(stmt.c.genre, stmt.c.tag, stmt.c.tag_count)
+        .where(stmt.c.rank <= 1) 
+        .order_by(stmt.c.genre)
     )
     
-    # Note: PostgreSQL specific DISTINCT ON syntax is handled by SQLAlchemy's distinct()
-    result = await db.execute(stmt)
+    result = await db.execute(final_stmt)
     return result.mappings().all()
 
 # (d) For a particular movie, show the distribution of users' ratings.
@@ -150,3 +153,15 @@ async def get_genre_coverage(db: AsyncSession = Depends(get_db)):
     )
     result = await db.execute(stmt)
     return result.mappings().all()
+
+# Total number of movies and genres in the dataset
+@router.get("/total-counts")
+async def get_total_counts(db: AsyncSession = Depends(get_db)):
+    """Returns the total number of movies and total number of genres."""
+    movie_count = await db.scalar(select(func.count(movie_models.Movie.movie_id)))
+    genre_count = await db.scalar(select(func.count(movie_models.Genre.genre_id)))
+    
+    return {
+        "total_movies": movie_count or 0,
+        "total_genres": genre_count or 0
+    }
