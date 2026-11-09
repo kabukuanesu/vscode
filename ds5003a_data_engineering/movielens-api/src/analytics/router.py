@@ -6,6 +6,9 @@ from typing import List
 from src.database import get_db
 from src.movies import models as movie_models
 
+from src.auth import models as auth_models
+from src.auth.dependencies import get_current_user_or_admin, get_current_admin
+
 router = APIRouter(
     prefix="/analytics",
     tags=["Analytics Dashboard"]
@@ -165,3 +168,90 @@ async def get_total_counts(db: AsyncSession = Depends(get_db)):
         "total_movies": movie_count or 0,
         "total_genres": genre_count or 0
     }
+
+# Get all users (Admin Only)
+@router.get("/users/calendar-events")
+async def get_users_calendar(
+    db: AsyncSession = Depends(get_db),
+    current_admin: auth_models.User = Depends(get_current_admin)
+):
+    stmt = select(
+        auth_models.User.id, 
+        auth_models.User.username, 
+        auth_models.User.created_at
+    ).order_by(auth_models.User.created_at.desc())
+    
+    result = await db.execute(stmt)
+    users = result.mappings().all()
+    
+    # Format for FullCalendar
+    return [
+        {
+            "id": f"user-{u.id}",
+            "title": f"👤 {u.username} (ID: {u.id})",
+            "start": u.created_at.isoformat() if u.created_at else None,
+            "allDay": False,
+            "extendedProps": {"calendar": "Success"}
+        }
+        for u in users if u.created_at
+    ]
+
+# Get user's own ratings (User/Admin)
+@router.get("/ratings/my-calendar-events")
+async def get_my_ratings_calendar(
+    db: AsyncSession = Depends(get_db),
+    current_user: auth_models.User = Depends(get_current_user_or_admin)
+):
+    stmt = (
+        select(
+            movie_models.Rating.movie_id,
+            movie_models.Rating.rating,
+            movie_models.Rating.rated_at,
+            movie_models.Movie.title
+        )
+        .join(movie_models.Movie, movie_models.Rating.movie_id == movie_models.Movie.movie_id)
+        .where(movie_models.Rating.user_id == current_user.id)
+        .order_by(movie_models.Rating.rated_at.desc())
+        .limit(500) # Limit to prevent browser crash if user has thousands of ratings
+    )
+    
+    result = await db.execute(stmt)
+    ratings = result.mappings().all()
+    
+    return [
+        {
+            "id": f"rating-{r.movie_id}",
+            "title": f"⭐ {r.rating} - {r.title}",
+            "start": r.rated_at.isoformat() if r.rated_at else None,
+            "allDay": False,
+            "extendedProps": {"calendar": "Primary"}
+        }
+        for r in ratings if r.rated_at
+    ]
+
+# Add this to src/analytics/router.py
+
+@router.get("/users")
+async def get_all_users(
+    db: AsyncSession = Depends(get_db),
+    current_admin: auth_models.User = Depends(get_current_admin)
+):
+    """
+    Get a list of all users in the database.
+    Restricted to 'admin' role only.
+    """
+    stmt = select(
+        auth_models.User.id,
+        auth_models.User.username,
+        auth_models.User.email,
+        auth_models.User.is_active,
+        auth_models.User.created_at,
+        auth_models.Role.name.label("role_name")
+    ).join(
+        auth_models.Role, auth_models.User.role_id == auth_models.Role.id
+    ).order_by(
+        auth_models.User.created_at.desc()
+    )
+    
+    result = await db.execute(stmt)
+    return result.mappings().all()
