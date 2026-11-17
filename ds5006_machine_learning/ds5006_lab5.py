@@ -83,7 +83,7 @@ from clusterlab_provided import (
     matching_accuracy, K_RANGE, N_RESTARTS, KMEANS_MAX_ITER,
     KMEDOIDS_MAX_ITER, GMM_REG, GMM_TOL, GMM_MAX_ITER, LINKAGES)
 
-ROLL_NUMBER = ""          # e.g. "CS24M001" -- REQUIRED
+ROLL_NUMBER = "142602026"          # e.g. "CS24M001" -- REQUIRED
 
 
 # ======================================================================
@@ -315,7 +315,35 @@ def gaussian_logpdf(X, mu, Sigma):
     Hint (not a rule): a Cholesky factor of Sigma gives both the
     log-determinant and the quadratic form without forming Sigma^{-1}.
     """
-    raise NotImplementedError
+    X = np.asarray(X, dtype=float)
+    mu = np.asarray(mu, dtype=float)
+    Sigma = np.asarray(Sigma, dtype=float)
+
+    N, d = X.shape
+
+    # Cholesky decomposition: Sigma = L @ L.T
+    L = np.linalg.cholesky(Sigma)
+
+    # Log determinant of Sigma
+    log_det = 2.0 * np.sum(np.log(np.diag(L)))
+
+    # Differences between observations and the mean
+    diff = (X - mu).T
+
+    # Solve L @ Z = diff
+    Z = np.linalg.solve(L, diff)
+
+    # Squared Mahalanobis distances
+    mahalanobis = np.sum(Z ** 2, axis=0)
+
+    # Log Gaussian density
+    log_pdf = -0.5 * (
+        d * np.log(2.0 * np.pi)
+        + log_det
+        + mahalanobis
+    )
+
+    return log_pdf
 
 
 def gmm_e_step(X, pis, mus, Sigmas):
@@ -326,7 +354,37 @@ def gmm_e_step(X, pis, mus, Sigmas):
         R      : (N, K), R[i, k] = gamma(z_ik), rows sum to 1
         loglik : float, sum_i log sum_k pi_k N(x_i | mu_k, Sigma_k)
     """
-    raise NotImplementedError
+    X = np.asarray(X, dtype=float)
+    pis = np.asarray(pis, dtype=float)
+    mus = np.asarray(mus, dtype=float)
+    Sigmas = np.asarray(Sigmas, dtype=float)
+
+    N = X.shape[0]
+    K = len(pis)
+
+    # Store log(pi_k * Gaussian density) for every point and component
+    log_joint = np.empty((N, K), dtype=float)
+
+    for k in range(K):
+        log_joint[:, k] = (
+            np.log(pis[k])
+            + gaussian_logpdf(X, mus[k], Sigmas[k])
+        )
+
+    # Log-sum-exp for numerical stability
+    row_max = np.max(log_joint, axis=1)
+
+    shifted = np.exp(log_joint - row_max[:, None])
+
+    row_sum = np.sum(shifted, axis=1)
+
+    # Responsibilities
+    R = shifted / row_sum[:, None]
+
+    # Total log-likelihood
+    loglik = np.sum(row_max + np.log(row_sum))
+
+    return R, float(loglik)
 
 
 def gmm_m_step(X, R, reg=GMM_REG):
@@ -334,7 +392,32 @@ def gmm_m_step(X, R, reg=GMM_REG):
 
     returns (pis, mus, Sigmas) with shapes (K,), (K, d), (K, d, d)
     """
-    raise NotImplementedError
+    X = np.asarray(X, dtype=float)
+    R = np.asarray(R, dtype=float)
+
+    N, d = X.shape
+    K = R.shape[1]
+
+    # Effective number of points per component
+    Nk = np.sum(R, axis=0)
+
+    # Mixing coefficients
+    pis = Nk / N
+
+    # Weighted means
+    mus = (R.T @ X) / Nk[:, None]
+
+    # Covariance matrices
+    Sigmas = np.empty((K, d, d), dtype=float)
+
+    for k in range(K):
+        diff = X - mus[k]
+
+        weighted_cov = (diff.T * R[:, k]) @ diff
+
+        Sigmas[k] = weighted_cov / Nk[k] + reg * np.eye(d)
+
+    return pis, mus, Sigmas
 
 
 def gmm_init_from_kmeans(X, labels, centres, reg=GMM_REG):
@@ -343,7 +426,33 @@ def gmm_init_from_kmeans(X, labels, centres, reg=GMM_REG):
     You may assume every cluster has at least two points.
     returns (pis, mus, Sigmas)
     """
-    raise NotImplementedError
+    X = np.asarray(X, dtype=float)
+    labels = np.asarray(labels)
+    centres = np.asarray(centres, dtype=float)
+
+    N, d = X.shape
+    K = centres.shape[0]
+
+    pis = np.empty(K, dtype=float)
+    mus = centres.copy()
+    Sigmas = np.empty((K, d, d), dtype=float)
+
+    for k in range(K):
+        members = X[labels == k]
+        Nk = len(members)
+
+        # Mixing coefficient
+        pis[k] = Nk / N
+
+        # Covariance around the GIVEN K-means centre
+        diff = members - centres[k]
+
+        Sigmas[k] = (
+            diff.T @ diff / Nk
+            + reg * np.eye(d)
+        )
+
+    return pis, mus, Sigmas
 
 
 def gmm_em(X, pis, mus, Sigmas, reg=GMM_REG, tol=GMM_TOL,
@@ -353,7 +462,41 @@ def gmm_em(X, pis, mus, Sigmas, reg=GMM_REG, tol=GMM_TOL,
     returns (pis, mus, Sigmas, R, history, n_iter)
         history : 1-D float array of length 1 + n_iter
     """
-    raise NotImplementedError
+    X = np.asarray(X, dtype=float)
+    pis = np.array(pis, dtype=float, copy=True)
+    mus = np.array(mus, dtype=float, copy=True)
+    Sigmas = np.array(Sigmas, dtype=float, copy=True)
+
+    # Initial E-step
+    R, loglik = gmm_e_step(X, pis, mus, Sigmas)
+
+    history = [loglik]
+    n_iter = 0
+
+    for _ in range(max_iter):
+
+        # M-step: update parameters
+        pis, mus, Sigmas = gmm_m_step(X, R, reg)
+
+        # E-step: calculate new responsibilities and likelihood
+        R, loglik = gmm_e_step(X, pis, mus, Sigmas)
+
+        history.append(loglik)
+        n_iter += 1
+
+        # Stop when the likelihood gain is smaller than tolerance
+        if history[-1] - history[-2] < tol:
+            break
+
+    return (
+        pis,
+        mus,
+        Sigmas,
+        R,
+        np.array(history, dtype=float),
+        int(n_iter)
+    )
+
 
 
 # ======================================================================
@@ -366,7 +509,76 @@ def agglomerative(D, linkage):
     linkage : "single", "complete" or "average"
     returns (N-1, 4) float array of merges
     """
-    raise NotImplementedError
+    D = np.asarray(D, dtype=float)
+
+    N = D.shape[0]
+
+    if linkage not in ("single", "complete", "average"):
+        raise ValueError("Unknown linkage method")
+
+    # Initially, every point is its own cluster
+    clusters = {i: [i] for i in range(N)}
+
+    merges = []
+
+    for t in range(N - 1):
+
+        active_ids = sorted(clusters.keys())
+
+        best_pair = None
+        best_distance = np.inf
+
+        # Examine every pair of active clusters
+        for a in range(len(active_ids)):
+            for b in range(a + 1, len(active_ids)):
+
+                i = active_ids[a]
+                j = active_ids[b]
+
+                members_i = clusters[i]
+                members_j = clusters[j]
+
+                # Distances between the two clusters
+                distances = D[np.ix_(members_i, members_j)]
+
+                # Calculate linkage distance
+                if linkage == "single":
+                    distance = np.min(distances)
+
+                elif linkage == "complete":
+                    distance = np.max(distances)
+
+                else:  # average linkage
+                    distance = np.mean(distances)
+
+                # Active IDs are sorted, so this also implements
+                # the required smallest-i, then smallest-j tie rule.
+                if distance < best_distance:
+                    best_distance = distance
+                    best_pair = (i, j)
+
+        i, j = best_pair
+
+        # Create the new cluster with ID N + t
+        new_id = N + t
+
+        new_members = clusters[i] + clusters[j]
+
+        # Record the merge
+        merges.append([
+            i,
+            j,
+            best_distance,
+            len(new_members)
+        ])
+
+        # Remove old clusters and insert the new one
+        del clusters[i]
+        del clusters[j]
+
+        clusters[new_id] = new_members
+
+    return np.asarray(merges, dtype=float).reshape(N - 1, 4)
 
 
 def cut_dendrogram(merges, N, K):
@@ -375,7 +587,53 @@ def cut_dendrogram(merges, N, K):
 
     returns (N,) int array with values 0..K-1
     """
-    raise NotImplementedError
+    merges = np.asarray(merges, dtype=float)
+
+    # Every point and every possible merged cluster has an ID
+    parent = np.arange(2 * N - 1, dtype=int)
+
+    # Keep the first N-K merges
+    n_merges = N - K
+
+    for t in range(n_merges):
+
+        i = int(merges[t, 0])
+        j = int(merges[t, 1])
+
+        new_id = N + t
+
+        parent[i] = new_id
+        parent[j] = new_id
+
+    # Find the final cluster containing each original point
+    final_clusters = []
+
+    for point in range(N):
+
+        node = point
+
+        while parent[node] != node:
+            node = parent[node]
+
+        final_clusters.append(node)
+
+    # Assign canonical labels in order of first appearance
+    label_map = {}
+    labels = np.empty(N, dtype=int)
+
+    next_label = 0
+
+    for point in range(N):
+
+        cluster_id = final_clusters[point]
+
+        if cluster_id not in label_map:
+            label_map[cluster_id] = next_label
+            next_label += 1
+
+        labels[point] = label_map[cluster_id]
+
+    return labels
 
 
 # ======================================================================
@@ -388,7 +646,32 @@ def experiment_1(roll):
 
     returns {"best_J": [8 floats], "worst_J": [8 floats]}
     """
-    raise NotImplementedError
+    X, y = make_dataset(roll, "blobs")
+
+    best_J = []
+    worst_J = []
+
+    for K in K_RANGE:
+        losses = []
+
+        for r in range(N_RESTARTS):
+            idx = initial_centre_indices(roll, "blobs", K, r)
+
+            init_centres = X[idx]
+
+            labels, centres, history, n_iter = kmeans(
+                X, init_centres
+            )
+
+            losses.append(float(history[-1]))
+
+        best_J.append(float(np.min(losses)))
+        worst_J.append(float(np.max(losses)))
+
+    return {
+        "best_J": best_J,
+        "worst_J": worst_J
+    }
 
 
 def experiment_2(roll):
@@ -399,7 +682,50 @@ def experiment_2(roll):
              "kmeans_shift": float,
              "kmedoids_shift": float}
     """
-    raise NotImplementedError
+    X, y = make_dataset(roll, "outliers")
+
+    # Two initial points, shared by both algorithms
+    idx = initial_centre_indices(roll, "outliers", 2, 0)
+
+    # K-means
+    labels_km, centres, history_km, n_iter_km = kmeans(
+        X, X[idx]
+    )
+
+    # K-medoids
+    D = euclidean_distance_matrix(X)
+
+    labels_md, medoids, history_md, n_iter_md = kmedoids(
+        D, idx
+    )
+
+    # Means of the two genuine groups (exclude outliers)
+    g0 = np.mean(X[y == 0], axis=0)
+    g1 = np.mean(X[y == 1], axis=0)
+
+    group_means = np.array([g0, g1])
+
+    # Calculate distance from each representative to the nearest
+    # genuine group mean
+    def shifts(points):
+        distances = np.linalg.norm(
+            points[:, None, :] - group_means[None, :, :],
+            axis=2
+        )
+
+        return np.min(distances, axis=1)
+
+    kmeans_shift = float(np.max(shifts(centres)))
+
+    medoid_points = X[medoids]
+    kmedoids_shift = float(np.max(shifts(medoid_points)))
+
+    return {
+        "kmeans_centres": centres.tolist(),
+        "kmedoids_medoids": medoids.astype(int).tolist(),
+        "kmeans_shift": kmeans_shift,
+        "kmedoids_shift": kmedoids_shift
+    }
 
 
 def experiment_3(roll):
@@ -410,7 +736,44 @@ def experiment_3(roll):
              "gmm_initial_ll": float, "gmm_final_ll": float,
              "gmm_n_iter": int}
     """
-    raise NotImplementedError
+    X, y = make_dataset(roll, "aniso")
+
+    # Initialisation for K = 3
+    idx = initial_centre_indices(roll, "aniso", 3, 0)
+
+    # Run K-means
+    kmeans_labels, centres, kmeans_history, kmeans_iter = kmeans(
+        X, X[idx]
+    )
+
+    kmeans_acc = matching_accuracy(kmeans_labels, y)
+
+    # Initialise GMM from K-means
+    pis, mus, Sigmas = gmm_init_from_kmeans(
+        X, kmeans_labels, centres, GMM_REG
+    )
+
+    # Run GMM EM using default arguments
+    pis, mus, Sigmas, R, history, n_iter = gmm_em(
+        X, pis, mus, Sigmas
+    )
+
+    # Convert responsibilities to hard cluster assignments
+    gmm_labels = np.argmax(R, axis=1)
+
+    gmm_acc = matching_accuracy(gmm_labels, y)
+
+    # Sort mixing coefficients from largest to smallest
+    gmm_pis_sorted = np.sort(pis)[::-1].tolist()
+
+    return {
+        "kmeans_acc": float(kmeans_acc),
+        "gmm_acc": float(gmm_acc),
+        "gmm_pis_sorted": gmm_pis_sorted,
+        "gmm_initial_ll": float(history[0]),
+        "gmm_final_ll": float(history[-1]),
+        "gmm_n_iter": int(n_iter)
+    }
 
 
 def experiment_4(roll):
@@ -420,7 +783,34 @@ def experiment_4(roll):
              "top_height": {"single": float, "complete": float,
                             "average": float}}
     """
-    raise NotImplementedError
+    X, y = make_dataset(roll, "moons")
+
+    N = X.shape[0]
+
+    # Construct Euclidean distance matrix
+    D = euclidean_distance_matrix(X)
+
+    acc = {}
+    top_height = {}
+
+    for linkage in LINKAGES:
+
+        # Construct hierarchical clustering
+        merges = agglomerative(D, linkage)
+
+        # Cut the dendrogram into two clusters
+        labels = cut_dendrogram(merges, N, 2)
+
+        # Evaluate clustering accuracy
+        acc[linkage] = float(matching_accuracy(labels, y))
+
+        # Height of the final merge
+        top_height[linkage] = float(merges[-1, 2])
+
+    return {
+        "acc": acc,
+        "top_height": top_height
+    }
 
 
 # ======================================================================
